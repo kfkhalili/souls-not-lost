@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { User } from "@supabase/supabase-js";
 import { CheckCircle, XCircle, Star, Search, Loader2 } from "lucide-react";
 
+// ... (ValidatedImage component and type definitions remain the same)
 type ImageObject = { url: string; title: string };
 type SourceObject = { url: string; title: string };
 
@@ -27,7 +28,6 @@ type MemorialState = {
   userUploadedImage: File | null;
 };
 
-// A new client-side component to handle image validation and rendering
 const ValidatedImage = ({
   img,
   onSelect,
@@ -45,28 +45,22 @@ const ValidatedImage = ({
 
   useEffect(() => {
     const validateImage = async () => {
-      try {
-        const response = await fetch(img.url, { method: "HEAD" });
-        if (
-          response.ok &&
-          response.headers.get("Content-Type")?.startsWith("image/")
-        ) {
-          setIsValid(true);
-        } else {
-          setIsValid(false);
-        }
-      } catch (error) {
+      // For signed URLs, we can assume they are valid if they exist.
+      // The pre-flight HEAD request can fail due to CORS on signed URLs.
+      if (img.url) {
+        setIsValid(true);
+      } else {
         setIsValid(false);
       }
     };
     validateImage();
   }, [img.url]);
 
-  if (isValid === false) return null; // Don't render if invalid
+  if (isValid === false) return null;
   if (isValid === null)
     return (
       <div className="rounded-lg bg-gray-200 dark:bg-gray-700 w-full h-28 sm:h-32 animate-pulse"></div>
-    ); // Show a loading skeleton
+    );
 
   return (
     <div className="relative group">
@@ -196,8 +190,9 @@ export default function AddProfilePage() {
         date_of_death: data.date_of_death
           ? new Date(data.date_of_death).toISOString().split("T")[0]
           : "",
-        selectedImages: data.isExisting ? data.images || [] : [],
-        primary_image_url: data.isExisting ? data.primary_image_url : null,
+        selectedImages: data.images || [],
+        primary_image_url:
+          data.primary_image_url || data.images?.[0]?.url || null,
       }));
     } catch (e: unknown) {
       setError(`Failed to find information: ${(e as Error).message}`);

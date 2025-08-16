@@ -15,10 +15,9 @@ const corsHeaders = {
 
 type TavilyResult = { url: string; content: string; title?: string };
 type TavilyImageURL = string;
+type ImageObject = { url: string; title: string };
 
-async function searchForContext(
-  query: string
-): Promise<{
+async function searchForContext(query: string): Promise<{
   context: string;
   images: TavilyImageURL[];
   sources: TavilyResult[];
@@ -48,7 +47,7 @@ async function searchForContext(
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS")
     return new Response("ok", { headers: corsHeaders });
 
@@ -61,7 +60,6 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // First, check if a memorial with this name already exists in our database.
     const { data: existingMemorial, error: dbError } = await supabaseAdmin
       .from("memorials")
       .select("*")
@@ -70,12 +68,32 @@ serve(async (req) => {
       .single();
 
     if (dbError && dbError.code !== "PGRST116") {
-      // Ignore 'No rows found' error
       throw dbError;
     }
 
-    // If found, return the existing data immediately.
     if (existingMemorial) {
+      // If the memorial exists, generate signed URLs for its images
+      const images = (existingMemorial.images as ImageObject[]) || [];
+      const imagePaths = images.map(
+        (img) => img.url.split("/memorial_images/")[1]
+      );
+      if (imagePaths.length > 0) {
+        const { data: signedUrlsData, error: signedUrlsError } =
+          await supabaseAdmin.storage
+            .from("memorial_images")
+            .createSignedUrls(imagePaths, 60); // 60-second validity
+
+        if (signedUrlsError) throw signedUrlsError;
+
+        const urlMap = new Map(
+          signedUrlsData.map((d) => [d.path, d.signedUrl])
+        );
+        existingMemorial.images = images.map((img) => ({
+          ...img,
+          url: urlMap.get(img.url.split("/memorial_images/")[1]) ?? img.url,
+        }));
+      }
+
       return new Response(
         JSON.stringify({ ...existingMemorial, isExisting: true }),
         {
@@ -84,7 +102,7 @@ serve(async (req) => {
       );
     }
 
-    // If not in DB, proceed with AI lookup
+    // ... (rest of the AI lookup logic remains the same)
     const { context, images, sources } = await searchForContext(name);
     if (!context) throw new Error("No reliable information could be found.");
 
@@ -146,7 +164,7 @@ serve(async (req) => {
     if (!toolCall) throw new Error("The AI could not extract information.");
 
     const data = JSON.parse(toolCall.function.arguments);
-    data.images = images.map((imageUrl) => ({
+    data.images = images.map((imageUrl: string) => ({
       url: imageUrl,
       title: `${name}`,
     }));

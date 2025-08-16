@@ -1,5 +1,6 @@
 // src/app/memorials/page.tsx
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@supabase/supabase-js";
+import { Database } from "@/types/supabase";
 import { Memorial } from "@/types";
 import MemorialImage from "./MemorialImage";
 
@@ -10,6 +11,17 @@ type LinkObject = {
 };
 
 const getMemorials = async (): Promise<Memorial[]> => {
+  // This client is safe for server-side use.
+  const supabase = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        persistSession: false,
+      },
+    }
+  );
+
   const { data, error } = await supabase.from("memorials").select("*");
 
   if (error) {
@@ -17,7 +29,42 @@ const getMemorials = async (): Promise<Memorial[]> => {
     return [];
   }
 
-  return data || [];
+  const memorialsWithImageUrls = await Promise.all(
+    (data || []).map(async (memorial) => {
+      const images = memorial.images as LinkObject[] | null;
+      if (!images || images.length === 0) {
+        return memorial;
+      }
+
+      // Extract the path from the URL. Assumes URL is in the format:
+      // .../storage/v1/object/public/memorial_images/your-file-path.jpg
+      const imagePaths = images.map(
+        (img) => img.url.split("/memorial_images/")[1]
+      );
+
+      // Create signed URLs that are valid for 60 seconds.
+      const { data: signedUrlsData, error: signedUrlsError } =
+        await supabase.storage
+          .from("memorial_images")
+          .createSignedUrls(imagePaths, 60);
+
+      if (signedUrlsError) {
+        console.error("Error creating signed URLs:", signedUrlsError);
+        return memorial;
+      }
+
+      const urlMap = new Map(signedUrlsData.map((d) => [d.path, d.signedUrl]));
+
+      const updatedImages = images.map((img) => ({
+        ...img,
+        url: urlMap.get(img.url.split("/memorial_images/")[1]) ?? img.url,
+      }));
+
+      return { ...memorial, images: updatedImages };
+    })
+  );
+
+  return memorialsWithImageUrls as Memorial[];
 };
 
 export default async function MemorialsPage() {
@@ -30,7 +77,6 @@ export default async function MemorialsPage() {
       </h1>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {memorials.map((memorial) => {
-          // Safely cast the JSONB fields to our strict type.
           const images = memorial.images as LinkObject[] | null;
           const sources = memorial.sources as LinkObject[] | null;
           const imageUrl =
