@@ -271,7 +271,10 @@ export default function AddProfilePage() {
         sources: memorial.sources,
         images: finalImages,
         primary_image_url:
-          memorial.primary_image_url || finalImages[0]?.url || null,
+          finalImages.find((img) => img.url === memorial.primary_image_url)
+            ?.url ||
+          finalImages[0]?.url ||
+          null,
         user_id: user.id,
       };
 
