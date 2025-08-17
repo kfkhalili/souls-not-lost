@@ -11,9 +11,9 @@ type LinkObject = {
 };
 
 type MemorialPageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 const getMemorialById = async (id: string): Promise<Memorial | null> => {
@@ -67,7 +67,8 @@ const getMemorialById = async (id: string): Promise<Memorial | null> => {
 export default async function MemorialDetailPage({
   params,
 }: MemorialPageProps) {
-  const memorial = await getMemorialById(params.id);
+  const { id } = await params;
+  const memorial = await getMemorialById(id);
 
   if (!memorial) {
     notFound();
